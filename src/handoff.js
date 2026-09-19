@@ -171,6 +171,23 @@ export class EventHandoff {
     this.#seen.clear();
   }
 
+  /**
+   * Rewind the handoff boundary after a confirmed reorg.
+   *
+   * Unlike commit(), rewind() is intentionally allowed to move
+   * the boundary backwards. The in-memory deduplication set is
+   * also cleared because events from the affected range may be
+   * replaced by different events after the reorg.
+   */
+  rewind(ledger) {
+    validateLedger(ledger);
+
+    this.#boundary = ledger;
+    this.#seen.clear();
+
+    return ledger;
+  }
+
   #acceptBoundary(event) {
     const id = event.id;
 

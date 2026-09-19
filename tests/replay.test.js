@@ -146,6 +146,46 @@ test('pipeline can drop replay events', async () => {
   assert.deepEqual(seen, ['1']);
 });
 
+test('replay checkpoint uses the unified manager API', async () => {
+  const calls = [];
+
+  const checkpoint = {
+    async load(key) {
+      calls.push(['load', key]);
+      return null;
+    },
+
+    async save(key, ledger) {
+      calls.push(['raw-save', key, ledger]);
+    },
+
+    async clear(key) {
+      calls.push(['clear', key]);
+    }
+  };
+
+  const streamer = makeStreamer([
+    { id: '1', ledger: 1 }
+  ]);
+
+  const replay = new EventReplay(streamer, {
+    checkpoint,
+    checkpointKey: 'replay'
+  });
+
+  await replay.run({
+    startLedger: 1,
+    endLedger: 1,
+    onEvent: () => {}
+  });
+
+  assert.deepEqual(calls, [
+    ['load', 'replay'],
+    ['load', 'replay'],
+    ['raw-save', 'replay', 2]
+  ]);
+});
+
 test('replay checkpoint resumes from the saved ledger', async () => {
   const store = new MemoryCheckpointStore();
 

@@ -280,6 +280,51 @@ test('EventEngine recover delegates to recovery', async () => {
   );
 });
 
+test('EventEngine does not rewind handoff when recovery fails', async () => {
+  let rewinds = 0;
+
+  const recovery = {
+    detect() {
+      return {
+        reorg: false,
+        reason: 'test'
+      };
+    },
+
+    async recover() {
+      throw new Error('recovery failed');
+    }
+  };
+
+  const handoff = {
+    rewind() {
+      rewinds++;
+    }
+  };
+
+  const engine =
+    new EventEngine(
+      makeStreamer(),
+      {
+        recovery,
+        handoff
+      }
+    );
+
+  await assert.rejects(
+    () =>
+      engine.recover({
+        affectedLedger: 100
+      }),
+    /recovery failed/
+  );
+
+  assert.equal(
+    rewinds,
+    0
+  );
+});
+
 test('EventEngine watchReorg delegates to monitor', async () => {
   const calls = [];
 

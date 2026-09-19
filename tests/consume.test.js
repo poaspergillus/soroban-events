@@ -20,6 +20,114 @@ function makeEvent(id, ledger) {
   };
 }
 
+test('consume processes more than 10000 events from one ledger without truncation', async () => {
+  const streamer = new SorobanEventStreamer(
+    'https://example.invalid'
+  );
+
+  const store = new MemoryCheckpointStore();
+  const checkpoint = new CheckpointManager(store);
+
+  streamer.getLatestLedger = async () => 600;
+
+  streamer.getEventsWindowed = async options => {
+    assert.equal(options.startLedger, 600);
+    assert.equal(options.endLedger, 600);
+    assert.equal(options.limit, null);
+
+    return Array.from(
+      { length: 10250 },
+      (_, i) => ({
+        id: `bulk-${i}`,
+        ledger: 600
+      })
+    );
+  };
+
+  let count = 0;
+
+  const processed = await streamer.consume({
+    startLedger: 600,
+    checkpoint,
+    checkpointKey: 'bulk-consumer',
+    maxEvents: 10250,
+    onEvent: async () => {
+      count++;
+    }
+  });
+
+  assert.equal(count, 10250);
+  assert.equal(processed, 10250);
+  assert.equal(
+    await checkpoint.load('bulk-consumer'),
+    601
+  );
+});
+
+test('consume sleeps when no events advance the cursor', async () => {
+  const streamer = new SorobanEventStreamer(
+    'https://example.invalid'
+  );
+
+  let latestCalls = 0;
+  let eventCalls = 0;
+  let sleeps = 0;
+
+  streamer.getLatestLedger = async () => {
+    latestCalls++;
+    return 100;
+  };
+
+  streamer.getEventsWindowed = async () => {
+    eventCalls++;
+    return [];
+  };
+
+  const originalSetTimeout = globalThis.setTimeout;
+
+  globalThis.setTimeout = (callback, ms, ...args) => {
+    sleeps++;
+
+    assert.equal(ms, 50);
+
+    callback(...args);
+
+    return {
+      unref() {}
+    };
+  };
+
+  try {
+    const controller = new AbortController();
+
+    let iterations = 0;
+
+    streamer.getLatestLedger = async () => {
+      latestCalls++;
+
+      if (iterations++ >= 2) {
+        controller.abort();
+      }
+
+      return 100;
+    };
+
+    const processed = await streamer.consume({
+      startLedger: 100,
+      pollInterval: 50,
+      signal: controller.signal,
+      onEvent: async () => {}
+    });
+
+    assert.equal(processed, 0);
+    assert.equal(eventCalls, 3);
+    assert.equal(sleeps, 2);
+    assert.equal(latestCalls, 3);
+  } finally {
+    globalThis.setTimeout = originalSetTimeout;
+  }
+});
+
 test('consume processes events and checkpoints after the whole ledger', async () => {
   const streamer = new SorobanEventStreamer(
     'https://example.invalid'

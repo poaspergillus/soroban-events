@@ -234,7 +234,7 @@ export class LiveBackfillEngine {
       pipeline,
       checkpoint,
       checkpointKey,
-      handler: async (event, context) => {
+      onEvent: async (event, context) => {
         const accepted =
           await this.#handoff.accept(event);
 

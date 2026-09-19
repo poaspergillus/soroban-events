@@ -225,6 +225,47 @@ test('checkpoint keys remain isolated', async () => {
   );
 });
 
+test('rewind resets the boundary and deduplication state', () => {
+  const handoff = new EventHandoff({
+    boundaryLedger: 100
+  });
+
+  const oldEvent = {
+    id: 'old-event',
+    ledger: 100
+  };
+
+  assert.deepEqual(
+    handoff.accept(oldEvent),
+    oldEvent
+  );
+
+  assert.equal(
+    handoff.accept(oldEvent),
+    null
+  );
+
+  assert.equal(
+    handoff.rewind(99),
+    99
+  );
+
+  assert.equal(
+    handoff.boundaryLedger,
+    99
+  );
+
+  const replacement = {
+    id: 'replacement-event',
+    ledger: 100
+  };
+
+  assert.deepEqual(
+    handoff.accept(replacement),
+    replacement
+  );
+});
+
 test('resetSeen allows a fresh processing session', () => {
   const handoff = new EventHandoff({
     boundaryLedger: 100

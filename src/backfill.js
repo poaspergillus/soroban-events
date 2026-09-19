@@ -291,7 +291,7 @@ export class BackfillEngine {
           startLedger: window.startLedger,
           endLedger: window.endLedger,
           filters,
-          limit: 10000,
+          limit: null,
           signal
         });
 

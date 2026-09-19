@@ -174,6 +174,55 @@ test('stream checkpoints after consumer resumes iteration', async () => {
   await iterator.return();
 });
 
+test('stream does not checkpoint past remaining events in a multi-event ledger', async () => {
+  const streamer = new SorobanEventStreamer(
+    'https://example.invalid'
+  );
+
+  const store = new MemoryCheckpointStore();
+  const checkpoint = new CheckpointManager(store);
+
+  streamer.getLatestLedger = async () => 500;
+
+  streamer.getEventsWindowed = async () => [
+    {
+      id: 'ledger500-a',
+      ledger: 500
+    },
+    {
+      id: 'ledger500-b',
+      ledger: 500
+    },
+    {
+      id: 'ledger500-c',
+      ledger: 500
+    }
+  ];
+
+  const iterator = streamer.stream({
+    startLedger: 500,
+    checkpoint,
+    checkpointKey: 'stream-safety'
+  });
+
+  const first = await iterator.next();
+
+  assert.equal(first.done, false);
+  assert.equal(first.value.id, 'ledger500-a');
+
+  assert.equal(
+    await checkpoint.load('stream-safety'),
+    null
+  );
+
+  await iterator.return();
+
+  assert.equal(
+    await checkpoint.load('stream-safety'),
+    null
+  );
+});
+
 test('stream resumes from an existing checkpoint', async () => {
   const streamer = new SorobanEventStreamer(
     'https://example.invalid',

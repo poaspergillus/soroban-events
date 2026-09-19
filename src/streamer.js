@@ -41,9 +41,16 @@ export class SorobanEventStreamer {
       throw new TypeError('rpcUrl is required');
     }
 
-    this.server = new rpc.Server(
+    this.rpcUrls = [
       rpcUrl,
-      options.serverOptions || {}
+      ...(options.failoverRpcUrls || [])
+    ].filter(Boolean);
+
+    this.serverOptions = options.serverOptions || {};
+    this.rpcIndex = 0;
+    this.server = new rpc.Server(
+      this.rpcUrls[0],
+      this.serverOptions
     );
 
     this.metrics =
@@ -69,6 +76,90 @@ export class SorobanEventStreamer {
 
     this.maxRetries = options.maxRetries ?? 3;
     this.retryBaseMs = options.retryBaseMs ?? 500;
+    this.retryMaxMs = options.retryMaxMs ?? 30000;
+    this.retryJitter = options.retryJitter ?? 0.2;
+    this.rateLimitBackoffMultiplier =
+      options.rateLimitBackoffMultiplier ?? 2;
+    this.adaptiveRateLimit = options.adaptiveRateLimit !== false;
+    this.lastRateLimitAt = 0;
+    this.rateLimitDelayMs = 0;
+    this.circuitBreakerThreshold =
+      options.circuitBreakerThreshold ?? 3;
+    this.circuitBreakerCooldownMs =
+      options.circuitBreakerCooldownMs ?? 30000;
+    this.rpcFailureCount = 0;
+    this.circuitOpenedAt = 0;
+  }
+
+  async getHealth() {
+    const health = await this.server.getHealth();
+
+    return {
+      status: health?.status ?? null,
+      latestLedger: Number.isSafeInteger(health?.latestLedger)
+        ? health.latestLedger
+        : null,
+      oldestLedger: Number.isSafeInteger(health?.oldestLedger)
+        ? health.oldestLedger
+        : null,
+      ledgerRetentionWindow:
+        Number.isSafeInteger(health?.ledgerRetentionWindow)
+          ? health.ledgerRetentionWindow
+          : null
+    };
+  }
+
+  async checkRetention(startLedger) {
+    if (
+      !Number.isSafeInteger(startLedger) ||
+      startLedger < 1
+    ) {
+      throw new TypeError(
+        'startLedger must be a positive safe integer'
+      );
+    }
+
+    const health = await this.getHealth();
+
+    return {
+      retained:
+        health.oldestLedger == null ||
+        startLedger >= health.oldestLedger,
+      startLedger,
+      oldestLedger: health.oldestLedger,
+      latestLedger: health.latestLedger,
+      ledgerRetentionWindow:
+        health.ledgerRetentionWindow
+    };
+  }
+
+  async checkRpcHealth() {
+    const health = await this.getHealth();
+
+    return {
+      healthy: health.status === 'healthy',
+      status: health.status,
+      latestLedger: health.latestLedger,
+      oldestLedger: health.oldestLedger,
+      ledgerRetentionWindow:
+        health.ledgerRetentionWindow
+    };
+  }
+
+  async isLedgerAvailable(ledger) {
+    if (!Number.isSafeInteger(ledger) || ledger < 1) {
+      throw new TypeError(
+        'ledger must be a positive safe integer'
+      );
+    }
+
+    const health = await this.getHealth();
+
+    if (health.oldestLedger == null) {
+      return true;
+    }
+
+    return ledger >= health.oldestLedger;
   }
 
   async getLatestLedger(options = {}) {
@@ -108,6 +199,8 @@ export class SorobanEventStreamer {
         this.metrics.counter(
           'rpc_requests'
         );
+
+        this.recordRpcSuccess();
 
         return response;
       } catch (error) {
@@ -354,11 +447,19 @@ export class SorobanEventStreamer {
       throw new TypeError('startLedger must be a positive integer');
     }
 
-    if (!Number.isInteger(limit) || limit < 1) {
-      throw new TypeError('limit must be a positive integer');
+    if (
+      limit !== null &&
+      (!Number.isSafeInteger(limit) || limit < 1)
+    ) {
+      throw new TypeError(
+        'limit must be null or a positive safe integer'
+      );
     }
 
-    if (endLedger != null && (!Number.isInteger(endLedger) || endLedger < startLedger)) {
+    if (
+      endLedger != null &&
+      (!Number.isInteger(endLedger) || endLedger < startLedger)
+    ) {
       throw new TypeError('endLedger must be >= startLedger');
     }
 
@@ -373,7 +474,10 @@ export class SorobanEventStreamer {
 
     let currentStart = startLedger;
 
-    while (currentStart <= targetEnd && results.length < limit) {
+    while (
+      currentStart <= targetEnd &&
+      (limit === null || results.length < limit)
+    ) {
       if (signal?.aborted) {
         throw new DOMException('Operation aborted', 'AbortError');
       }
@@ -383,7 +487,10 @@ export class SorobanEventStreamer {
         targetEnd + 1
       );
 
-      const remaining = limit - results.length;
+      const remaining =
+        limit === null
+          ? null
+          : limit - results.length;
 
       const events = await this.fetchWindow(
         currentStart,
@@ -399,7 +506,12 @@ export class SorobanEventStreamer {
         seen.add(raw.id);
         results.push(decodeEvent(raw));
 
-        if (results.length >= limit) break;
+        if (
+          limit !== null &&
+          results.length >= limit
+        ) {
+          break;
+        }
       }
 
       currentStart = currentEndExclusive;
@@ -423,13 +535,24 @@ export class SorobanEventStreamer {
     const rawEvents = [];
     let cursor;
 
-    while (rawEvents.length < limit) {
+    while (
+      limit === null ||
+      rawEvents.length < limit
+    ) {
       if (signal?.aborted) {
         throw new DOMException('Operation aborted', 'AbortError');
       }
 
+      const remaining =
+        limit === null
+          ? this.pageSize
+          : Math.min(
+              this.pageSize,
+              limit - rawEvents.length
+            );
+
       const pagination = {
-        limit: Math.min(this.pageSize, limit - rawEvents.length)
+        limit: remaining
       };
 
       if (cursor) {
@@ -467,7 +590,9 @@ export class SorobanEventStreamer {
       cursor = nextCursor;
     }
 
-    return rawEvents.slice(0, limit);
+    return limit === null
+      ? rawEvents
+      : rawEvents.slice(0, limit);
   }
 
   async fetchWindowNewest(
@@ -534,12 +659,82 @@ export class SorobanEventStreamer {
     return newest;
   }
 
+  circuitOpen() {
+    if (this.circuitOpenedAt === 0) {
+      return false;
+    }
+
+    if (
+      Date.now() - this.circuitOpenedAt >=
+      this.circuitBreakerCooldownMs
+    ) {
+      this.circuitOpenedAt = 0;
+      this.rpcFailureCount = 0;
+      this.metrics.counter('rpc_circuit_half_open');
+      return false;
+    }
+
+    return true;
+  }
+
+  recordRpcFailure() {
+    this.rpcFailureCount++;
+
+    if (
+      this.rpcFailureCount >=
+      this.circuitBreakerThreshold
+    ) {
+      this.circuitOpenedAt = Date.now();
+      this.metrics.counter('rpc_circuit_open');
+    }
+  }
+
+  recordRpcSuccess() {
+    this.rpcFailureCount = 0;
+    this.circuitOpenedAt = 0;
+  }
+
+  switchRpc() {
+    if (this.rpcUrls.length < 2) {
+      return false;
+    }
+
+    this.rpcIndex =
+      (this.rpcIndex + 1) % this.rpcUrls.length;
+
+    this.server = new rpc.Server(
+      this.rpcUrls[this.rpcIndex],
+      this.serverOptions
+    );
+
+    this.metrics.counter('rpc_failovers');
+
+    return true;
+  }
+
   async requestWithRetry(params, signal) {
     let attempt = 0;
+    let endpointsTried = 0;
+    let lastError;
 
     while (true) {
+      if (this.circuitOpen()) {
+        const error = new Error(
+          'RPC circuit breaker is open'
+        );
+        error.code = 'RPC_CIRCUIT_OPEN';
+        throw error;
+      }
+
       if (signal?.aborted) {
         throw new DOMException('Operation aborted', 'AbortError');
+      }
+
+      if (
+        this.adaptiveRateLimit &&
+        this.rateLimitDelayMs > 0
+      ) {
+        await sleep(this.rateLimitDelayMs, signal);
       }
 
       this.metrics.counter(
@@ -561,6 +756,23 @@ export class SorobanEventStreamer {
           'rpc_requests'
         );
 
+        this.recordRpcSuccess();
+
+        if (
+          this.adaptiveRateLimit &&
+          this.rateLimitDelayMs > 0
+        ) {
+          this.rateLimitDelayMs =
+            Math.floor(this.rateLimitDelayMs / 2);
+
+          if (
+            this.rateLimitDelayMs <
+            this.retryBaseMs
+          ) {
+            this.rateLimitDelayMs = 0;
+          }
+        }
+
         return response;
       } catch (error) {
         stop();
@@ -575,29 +787,90 @@ export class SorobanEventStreamer {
           this.metrics.counter(
             'rpc_rate_limits'
           );
+
+          this.lastRateLimitAt = Date.now();
+
+          if (this.adaptiveRateLimit) {
+            this.rateLimitDelayMs =
+              Math.min(
+                this.retryMaxMs,
+                Math.max(
+                  this.retryBaseMs,
+                  this.rateLimitDelayMs > 0
+                    ? this.rateLimitDelayMs *
+                      this.rateLimitBackoffMultiplier
+                    : this.retryBaseMs
+                )
+              );
+          }
         }
 
+        lastError = error;
+        this.recordRpcFailure();
+
         if (
-          (kind !== 'rate-limit' && kind !== 'transient') ||
-          attempt >= this.maxRetries
+          kind !== 'rate-limit' &&
+          kind !== 'transient'
         ) {
           throw error;
         }
 
-        const delay =
-          this.retryBaseMs *
-          2 ** attempt *
-          (kind === 'rate-limit' ? 2 : 1);
+        if (attempt < this.maxRetries) {
+          const exponential = Math.min(
+            this.retryMaxMs,
+            this.retryBaseMs * 2 ** attempt
+          );
 
-        this.metrics.counter(
-          'rpc_retries'
-        );
+          const baseDelay =
+            kind === 'rate-limit'
+              ? exponential *
+                this.rateLimitBackoffMultiplier
+              : exponential;
 
-        await sleep(delay);
-        attempt++;
+          const adaptiveDelay =
+            this.adaptiveRateLimit
+              ? Math.max(
+                  baseDelay,
+                  this.rateLimitDelayMs
+                )
+              : baseDelay;
+
+          const jitter =
+            adaptiveDelay *
+            this.retryJitter *
+            Math.random();
+
+          const delay = Math.min(
+            this.retryMaxMs,
+            adaptiveDelay + jitter
+          );
+
+          this.metrics.counter(
+            'rpc_retries'
+          );
+
+          await sleep(delay, signal);
+          attempt++;
+          continue;
+        }
+
+        if (
+          kind === 'transient' &&
+          endpointsTried < this.rpcUrls.length - 1
+        ) {
+          endpointsTried++;
+          attempt = 0;
+
+          this.switchRpc();
+
+          continue;
+        }
+
+        throw lastError;
       }
     }
   }
+
 
   async tail({
     contractId,
@@ -720,13 +993,14 @@ export class SorobanEventStreamer {
 
     while (!signal?.aborted) {
       const latest = await this.getLatestLedger();
+      const cursorBeforeFetch = cursorLedger;
 
       if (cursorLedger <= latest) {
         const events = await this.getEventsWindowed({
           startLedger: cursorLedger,
           endLedger: latest,
           filters,
-          limit: 10000,
+          limit: null,
           signal
         });
 
@@ -814,7 +1088,10 @@ export class SorobanEventStreamer {
         }
       }
 
-      if (cursorLedger > latest) {
+      if (
+        cursorLedger === cursorBeforeFetch ||
+        cursorLedger > latest
+      ) {
         if (signal?.aborted) return processed;
 
         await sleep(pollInterval);
@@ -864,28 +1141,53 @@ export class SorobanEventStreamer {
           startLedger: cursorLedger,
           endLedger: latest,
           filters,
-          limit: 10000,
+          limit: null,
           signal
         });
 
-        for (const event of events) {
+        let index = 0;
+
+        while (index < events.length) {
           if (signal?.aborted) return;
 
-          yield event;
+          const ledger = events[index].ledger;
+          const ledgerEvents = [];
 
-          const nextLedger = Math.max(
-            cursorLedger,
-            event.ledger + 1
-          );
+          while (
+            index < events.length &&
+            events[index].ledger === ledger
+          ) {
+            ledgerEvents.push(events[index]);
+            index++;
+          }
 
+          for (const event of ledgerEvents) {
+            if (signal?.aborted) return;
+
+            yield event;
+          }
+
+          /*
+           * A stream checkpoint represents the first ledger that
+           * still needs processing.  It must never advance merely
+           * because one event from a ledger was yielded.
+           *
+           * The generator cannot know that the consumer actually
+           * resumed after the final event unless execution reaches
+           * this point.  Therefore the checkpoint advances only
+           * after every event in the ledger has been yielded.
+           */
           if (checkpoint) {
             await checkpoint.save(
-              nextLedger,
+              ledger + 1,
               checkpointKey
             );
           }
 
-          cursorLedger = nextLedger;
+          cursorLedger = Math.max(
+            cursorLedger,
+            ledger + 1
+          );
         }
       }
 

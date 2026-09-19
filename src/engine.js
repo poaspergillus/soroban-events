@@ -529,8 +529,28 @@ export class EventEngine {
       'engine_recoveries'
     );
 
-    return this.#recovery.recover(
-      options
-    );
+    const result =
+      await this.#recovery.recover(
+        options
+      );
+
+    /*
+     * Recovery rewinds the durable processing position.
+     * The in-memory handoff must move with it or it can reject
+     * replayed replacement events from the affected range.
+     *
+     * Only mutate handoff state after recovery succeeds.
+     */
+    if (
+      result &&
+      Number.isSafeInteger(result.resumeFrom) &&
+      typeof this.#handoff.rewind === 'function'
+    ) {
+      this.#handoff.rewind(
+        result.resumeFrom
+      );
+    }
+
+    return result;
   }
 }

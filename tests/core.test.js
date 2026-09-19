@@ -44,6 +44,95 @@ function makeStreamer(pages, options = {}) {
   return streamer;
 }
 
+test('unlimited window retrieval follows pagination past 10000 events', async () => {
+  const streamer = new SorobanEventStreamer(
+    'https://example.invalid'
+  );
+
+  let calls = 0;
+
+  streamer.server = {
+    getEvents: async request => {
+      calls++;
+
+      const cursor = request.pagination?.cursor ?? null;
+
+      if (cursor === null) {
+        assert.equal(request.startLedger, 100);
+        assert.equal(request.endLedger, 101);
+      }
+
+      if (cursor === null) {
+        return {
+          events: Array.from(
+            { length: 10000 },
+            (_, i) => ({
+              id: `event-${i}`,
+              ledger: 100
+            })
+          ),
+          cursor: 'page-2'
+        };
+      }
+
+      if (cursor === 'page-2') {
+        return {
+          events: Array.from(
+            { length: 250 },
+            (_, i) => ({
+              id: `event-${10000 + i}`,
+              ledger: 100
+            })
+          ),
+          cursor: null
+        };
+      }
+
+      throw new Error(`unexpected cursor: ${cursor}`);
+    }
+  };
+
+  const events = await streamer.getEventsWindowed({
+    startLedger: 100,
+    endLedger: 100,
+    limit: null
+  });
+
+  assert.equal(events.length, 10250);
+  assert.equal(events[0].id, 'event-0');
+  assert.equal(events[9999].id, 'event-9999');
+  assert.equal(events[10000].id, 'event-10000');
+  assert.equal(events[10249].id, 'event-10249');
+  assert.equal(calls, 2);
+});
+
+test('null limit does not truncate a large single page', async () => {
+  const streamer = new SorobanEventStreamer(
+    'https://example.invalid'
+  );
+
+  streamer.server = {
+    getEvents: async () => ({
+      events: Array.from(
+        { length: 1200 },
+        (_, i) => ({
+          id: `unlimited-${i}`,
+          ledger: 300
+        })
+      ),
+      cursor: null
+    })
+  };
+
+  const events = await streamer.getEventsWindowed({
+    startLedger: 300,
+    endLedger: 300,
+    limit: null
+  });
+
+  assert.equal(events.length, 1200);
+});
+
 test('window size never exceeds safe maximum', () => {
   const s = new SorobanEventStreamer(
     'https://example.invalid',
@@ -420,5 +509,430 @@ test('invalid pagination options are rejected', async () => {
       limit: 1.5
     }),
     /limit/
+  );
+});
+
+
+test('getHealth exposes RPC retention metadata', async () => {
+  const streamer = new SorobanEventStreamer(
+    'https://example.invalid'
+  );
+
+  streamer.server = {
+    getHealth: async () => ({
+      status: 'healthy',
+      latestLedger: 200,
+      oldestLedger: 100,
+      ledgerRetentionWindow: 101
+    })
+  };
+
+  assert.deepEqual(
+    await streamer.getHealth(),
+    {
+      status: 'healthy',
+      latestLedger: 200,
+      oldestLedger: 100,
+      ledgerRetentionWindow: 101
+    }
+  );
+});
+
+test('checkRetention detects retained and expired ledgers', async () => {
+  const streamer = new SorobanEventStreamer(
+    'https://example.invalid'
+  );
+
+  streamer.server = {
+    getHealth: async () => ({
+      status: 'healthy',
+      latestLedger: 200,
+      oldestLedger: 100,
+      ledgerRetentionWindow: 101
+    })
+  };
+
+  assert.equal(
+    (await streamer.checkRetention(99)).retained,
+    false
+  );
+
+  assert.equal(
+    (await streamer.checkRetention(100)).retained,
+    true
+  );
+});
+
+test('checkRpcHealth reports healthy RPC state', async () => {
+  const streamer = new SorobanEventStreamer(
+    'https://example.invalid'
+  );
+
+  streamer.server = {
+    getHealth: async () => ({
+      status: 'healthy',
+      latestLedger: 200,
+      oldestLedger: 100,
+      ledgerRetentionWindow: 101
+    })
+  };
+
+  assert.deepEqual(
+    await streamer.checkRpcHealth(),
+    {
+      healthy: true,
+      status: 'healthy',
+      latestLedger: 200,
+      oldestLedger: 100,
+      ledgerRetentionWindow: 101
+    }
+  );
+});
+
+test('checkRpcHealth reports unhealthy RPC state', async () => {
+  const streamer = new SorobanEventStreamer(
+    'https://example.invalid'
+  );
+
+  streamer.server = {
+    getHealth: async () => ({
+      status: 'syncing',
+      latestLedger: 200,
+      oldestLedger: 100,
+      ledgerRetentionWindow: 101
+    })
+  };
+
+  const health = await streamer.checkRpcHealth();
+
+  assert.equal(health.healthy, false);
+  assert.equal(health.status, 'syncing');
+});
+
+test('isLedgerAvailable detects retained ledger', async () => {
+  const streamer = new SorobanEventStreamer(
+    'https://example.invalid'
+  );
+
+  streamer.server = {
+    getHealth: async () => ({
+      status: 'healthy',
+      latestLedger: 200,
+      oldestLedger: 100,
+      ledgerRetentionWindow: 101
+    })
+  };
+
+  assert.equal(
+    await streamer.isLedgerAvailable(100),
+    true
+  );
+
+  assert.equal(
+    await streamer.isLedgerAvailable(99),
+    false
+  );
+});
+
+test('switchRpc rotates to the configured failover RPC', () => {
+  const streamer = new SorobanEventStreamer(
+    'https://primary.example',
+    {
+      failoverRpcUrls: [
+        'https://secondary.example'
+      ]
+    }
+  );
+
+  assert.equal(streamer.rpcIndex, 0);
+  assert.equal(streamer.switchRpc(), true);
+  assert.equal(streamer.rpcIndex, 1);
+  assert.equal(streamer.switchRpc(), true);
+  assert.equal(streamer.rpcIndex, 0);
+});
+
+test('switchRpc reports false without failover RPCs', () => {
+  const streamer = new SorobanEventStreamer(
+    'https://primary.example'
+  );
+
+  assert.equal(streamer.switchRpc(), false);
+});
+
+test('failover retries each configured RPC endpoint once', async () => {
+  const streamer = new SorobanEventStreamer(
+    'https://primary.example',
+    {
+      failoverRpcUrls: [
+        'https://secondary.example'
+      ],
+      maxRetries: 0
+    }
+  );
+
+  let calls = 0;
+
+  streamer.server = {
+    getEvents: async () => {
+      calls++;
+      throw Object.assign(
+        new Error('socket reset'),
+        { status: 500 }
+      );
+    }
+  };
+
+  const originalSwitch = streamer.switchRpc.bind(streamer);
+
+  streamer.switchRpc = () => {
+    const switched = originalSwitch();
+
+    if (switched) {
+      streamer.server = {
+        getEvents: async () => ({
+          events: ['recovered']
+        })
+      };
+    }
+
+    return switched;
+  };
+
+  const result = await streamer.requestWithRetry({});
+
+  assert.deepEqual(result, {
+    events: ['recovered']
+  });
+  assert.equal(calls, 1);
+});
+
+test('failover stops after all RPC endpoints fail', async () => {
+  const streamer = new SorobanEventStreamer(
+    'https://primary.example',
+    {
+      failoverRpcUrls: [
+        'https://secondary.example'
+      ],
+      maxRetries: 0
+    }
+  );
+
+  let calls = 0;
+
+  streamer.server = {
+    getEvents: async () => {
+      calls++;
+      throw Object.assign(
+        new Error('socket reset'),
+        { status: 500 }
+      );
+    }
+  };
+
+  streamer.switchRpc = () => {
+    streamer.rpcIndex++;
+    streamer.server = {
+      getEvents: async () => {
+        calls++;
+        throw Object.assign(
+          new Error('socket reset'),
+          { status: 500 }
+        );
+      }
+    };
+    return true;
+  };
+
+  await assert.rejects(
+    streamer.requestWithRetry({}),
+    /socket reset/
+  );
+
+  assert.equal(calls, 2);
+});
+
+test('circuit breaker opens after repeated RPC failures', async () => {
+  const streamer = new SorobanEventStreamer(
+    'https://primary.example',
+    {
+      maxRetries: 0,
+      circuitBreakerThreshold: 2,
+      circuitBreakerCooldownMs: 60000
+    }
+  );
+
+  streamer.server = {
+    getEvents: async () => {
+      throw Object.assign(
+        new Error('socket reset'),
+        { status: 500 }
+      );
+    }
+  };
+
+  await assert.rejects(
+    streamer.requestWithRetry({}),
+    /socket reset/
+  );
+
+  await assert.rejects(
+    streamer.requestWithRetry({}),
+    /socket reset/
+  );
+
+  await assert.rejects(
+    streamer.requestWithRetry({}),
+    error => error.code === 'RPC_CIRCUIT_OPEN'
+  );
+
+  assert.equal(streamer.rpcFailureCount, 2);
+  assert.notEqual(streamer.circuitOpenedAt, 0);
+});
+
+test('successful RPC closes the circuit and resets failures', async () => {
+  const streamer = new SorobanEventStreamer(
+    'https://primary.example',
+    {
+      maxRetries: 0,
+      circuitBreakerThreshold: 2
+    }
+  );
+
+  streamer.rpcFailureCount = 1;
+  streamer.circuitOpenedAt = 0;
+
+  streamer.server = {
+    getEvents: async () => ({
+      events: []
+    })
+  };
+
+  const result = await streamer.requestWithRetry({});
+
+  assert.deepEqual(result, {
+    events: []
+  });
+  assert.equal(streamer.rpcFailureCount, 0);
+  assert.equal(streamer.circuitOpenedAt, 0);
+});
+
+
+
+test('adaptive rate limiting increases backoff after 429 and decays after success', async () => {
+  const streamer = new SorobanEventStreamer(
+    'https://primary.example',
+    {
+      maxRetries: 0,
+      retryBaseMs: 10,
+      retryMaxMs: 100,
+      adaptiveRateLimit: true
+    }
+  );
+
+  streamer.server = {
+    getEvents: async () => {
+      throw Object.assign(
+        new Error('rate limited'),
+        { status: 429 }
+      );
+    }
+  };
+
+  await assert.rejects(
+    streamer.requestWithRetry({}),
+    /rate limited/
+  );
+
+  const firstDelay =
+    streamer.rateLimitDelayMs;
+
+  assert.ok(firstDelay >= 10);
+  assert.ok(firstDelay <= 100);
+  assert.ok(
+    streamer.lastRateLimitAt > 0
+  );
+
+  streamer.server = {
+    getEvents: async () => ({
+      events: []
+    })
+  };
+
+  await streamer.requestWithRetry({});
+
+  assert.ok(
+    streamer.rateLimitDelayMs < firstDelay ||
+    streamer.rateLimitDelayMs === 0
+  );
+});
+
+test('adaptive rate limiting can be disabled', async () => {
+  const streamer = new SorobanEventStreamer(
+    'https://primary.example',
+    {
+      maxRetries: 0,
+      retryBaseMs: 10,
+      adaptiveRateLimit: false
+    }
+  );
+
+  streamer.server = {
+    getEvents: async () => {
+      throw Object.assign(
+        new Error('rate limited'),
+        { status: 429 }
+      );
+    }
+  };
+
+  await assert.rejects(
+    streamer.requestWithRetry({}),
+    /rate limited/
+  );
+
+  assert.equal(
+    streamer.rateLimitDelayMs,
+    0
+  );
+});
+
+test('adaptive retry delay is capped at retryMaxMs', async () => {
+  const streamer = new SorobanEventStreamer(
+    'https://primary.example',
+    {
+      maxRetries: 1,
+      retryBaseMs: 100,
+      retryMaxMs: 150,
+      retryJitter: 0,
+      adaptiveRateLimit: true
+    }
+  );
+
+  let calls = 0;
+
+  streamer.server = {
+    getEvents: async () => {
+      calls++;
+
+      throw Object.assign(
+        new Error('rate limited'),
+        { status: 429 }
+      );
+    }
+  };
+
+  const started = Date.now();
+
+  await assert.rejects(
+    streamer.requestWithRetry({}),
+    /rate limited/
+  );
+
+  const elapsed = Date.now() - started;
+
+  assert.equal(calls, 2);
+  assert.ok(elapsed >= 150);
+  assert.ok(
+    streamer.rateLimitDelayMs <= 150
   );
 });

@@ -95,3 +95,8 @@ export {
   LifecycleController,
   LIFECYCLE_STATES
 } from './lifecycle.js';
+
+export { DeadLetterError, MemoryDeadLetterQueue, isDeadLetterQueue } from './dead-letter.js';
+export { createEventFilter, filterEvents, matchesEvent } from './event-filter.js';
+export { validateEventQuery, queryEvents, createEventQuery } from './event-query.js';
+export { createExporter, exportEvents, exportEventStream, DEFAULT_EXPORT_COLUMNS } from './export.js';

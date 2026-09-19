@@ -139,6 +139,85 @@ test('LiveBackfillEngine commits its boundary', async () => {
   );
 });
 
+test('consumeLive delivers events through onEvent and handler', async () => {
+  const event = {
+    id: 'live-1',
+    ledger: 100
+  };
+
+  const accepted = [];
+  const onEvents = [];
+  const handled = [];
+
+  const streamer = {
+    async getLatestLedger() {
+      return {
+        sequence: 100,
+        hash: 'hash-100',
+        closeTime: null,
+        protocolVersion: null
+      };
+    },
+
+    async getEventsWindowed() {
+      return [];
+    },
+
+    async consume(options) {
+      assert.equal(
+        typeof options.onEvent,
+        'function'
+      );
+
+      await options.onEvent(event, {
+        ledger: 100
+      });
+
+      return 1;
+    }
+  };
+
+  const handoff = {
+    async initialize() {},
+    async accept(value) {
+      accepted.push(value);
+      return true;
+    },
+    async commit() {}
+  };
+
+  const engine =
+    new LiveBackfillEngine(
+      streamer,
+      { handoff }
+    );
+
+  const result =
+    await engine.consumeLive({
+      startLedger: 100,
+      onEvent: async value => {
+        onEvents.push(value);
+      },
+      handler: async value => {
+        handled.push(value);
+      }
+    });
+
+  assert.equal(result, 1);
+  assert.deepEqual(
+    accepted,
+    [event]
+  );
+  assert.deepEqual(
+    onEvents,
+    [event]
+  );
+  assert.deepEqual(
+    handled,
+    [event]
+  );
+});
+
 test('LiveBackfillEngine can run its setup sequence', async () => {
   const calls = [];
 

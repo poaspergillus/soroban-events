@@ -1,6 +1,63 @@
 import test from 'node:test';
+import { readFile } from 'node:fs/promises';
 import assert from 'node:assert/strict';
 import { access } from 'node:fs/promises';
+
+
+test('CLI source exposes status, backfill, and replay commands', async () => {
+  const source = await readFile(
+    new URL(
+      '../src/cli.js',
+      import.meta.url
+    ),
+    'utf8'
+  );
+
+  assert.match(
+    source,
+    /\.command\('status'\)/
+  );
+
+  assert.match(
+    source,
+    /\.command\('backfill'\)/
+  );
+
+  assert.match(
+    source,
+    /\.command\('replay'\)/
+  );
+});
+
+test('CLI source exposes ledger range and export options', async () => {
+  const source = await readFile(
+    new URL(
+      '../src/cli.js',
+      import.meta.url
+    ),
+    'utf8'
+  );
+
+  assert.match(
+    source,
+    /--start <ledger>/
+  );
+
+  assert.match(
+    source,
+    /--end <ledger>/
+  );
+
+  assert.match(
+    source,
+    /--format <format>/
+  );
+
+  assert.match(
+    source,
+    /--output <file>/
+  );
+});
 
 test('CLI entrypoint exists', async () => {
   await assert.doesNotReject(

@@ -3,6 +3,7 @@ import {
 } from './backfill.js';
 
 import {
+  CheckpointManager,
   assertCheckpointStore
 } from './checkpoint.js';
 import { assertEventStore } from './store.js';
@@ -33,7 +34,28 @@ export class EventReplay {
 
     if (options.checkpoint != null) {
       assertCheckpointStore(options.checkpoint);
-      this.#checkpoint = options.checkpoint;
+
+      /*
+       * Normalize the persistence primitive to the same
+       * manager-style checkpoint API used by Streamer,
+       * Backfill, and ReorgRecovery.
+       *
+       * Raw stores expose:
+       *   save(key, ledger)
+       *
+       * CheckpointManager exposes:
+       *   save(ledger, key)
+       *
+       * Keeping this boundary here prevents argument-order
+       * mistakes from leaking into replay logic.
+       */
+      this.#checkpoint = new CheckpointManager(
+        options.checkpoint,
+        {
+          defaultKey:
+            options.checkpointKey ?? 'replay'
+        }
+      );
     }
 
     this.#checkpointKey =
@@ -144,6 +166,7 @@ export class EventReplay {
           startLedger: window.startLedger,
           endLedger: window.endLedger,
           filters,
+          limit: null,
           signal
         });
 
@@ -188,8 +211,8 @@ export class EventReplay {
 
       if (this.#checkpoint) {
         await this.#checkpoint.save(
-          this.#checkpointKey,
-          window.endLedger + 1
+          window.endLedger + 1,
+          this.#checkpointKey
         );
       }
     }
