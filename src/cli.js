@@ -141,23 +141,43 @@ program
         );
       }
 
-      process.stdout.write(
-        JSON.stringify(
-          parsed,
-          null,
-          2
-        ) + '\n'
-      );
-
-      if (!response.ok) {
-        process.exitCode = 1;
-      }
+      const rpcError =
+        parsed &&
+        parsed.error;
 
       if (
-        parsed &&
-        parsed.error
+        response.ok === false ||
+        rpcError
       ) {
+        process.stdout.write(
+          JSON.stringify(
+            rpcError ?? {
+              status: response.status,
+              statusText: response.statusText
+            },
+            null,
+            2
+          ) + '\n'
+        );
+
         process.exitCode = 1;
+      } else {
+        const sequence =
+          parsed &&
+          parsed.result &&
+          parsed.result.sequence;
+
+        if (
+          sequence === undefined
+        ) {
+          throw new Error(
+            'RPC response did not contain result.sequence'
+          );
+        }
+
+        process.stdout.write(
+          `${sequence}\n`
+        );
       }
     }
   );
