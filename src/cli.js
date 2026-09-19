@@ -56,7 +56,17 @@ program
         await fetch(
           rpc,
           {
-            method: 'GET'
+            method: 'POST',
+            headers: {
+              'content-type':
+                'application/json'
+            },
+            body: JSON.stringify({
+              jsonrpc: '2.0',
+              id: 1,
+              method: 'getHealth',
+              params: {}
+            })
           }
         );
 
