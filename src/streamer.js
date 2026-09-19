@@ -182,6 +182,70 @@ export class SorobanEventStreamer {
     return rawEvents.slice(0, limit);
   }
 
+  async fetchWindowNewest(
+    startLedger,
+    endLedgerExclusive,
+    filters,
+    limit,
+    signal
+  ) {
+    const newest = [];
+    let cursor;
+
+    while (true) {
+      if (signal?.aborted) {
+        throw new DOMException("Operation aborted", "AbortError");
+      }
+
+      const pagination = {
+        limit: this.pageSize
+      };
+
+      if (cursor) {
+        pagination.cursor = cursor;
+      }
+
+      const params = {
+        filters,
+        pagination
+      };
+
+      if (!cursor) {
+        params.startLedger = startLedger;
+        params.endLedger = endLedgerExclusive;
+      }
+
+      const response = await this.requestWithRetry(params, signal);
+      const events = response?.events ?? [];
+
+      for (const event of events) {
+        if (!event?.id) continue;
+
+        newest.push(event);
+
+        if (newest.length > limit) {
+          newest.shift();
+        }
+      }
+
+      const nextCursor = response?.cursor;
+
+      if (!nextCursor || events.length === 0) {
+        break;
+      }
+
+      if (nextCursor === cursor) {
+        throw new Error(
+          `RPC pagination cursor did not advance for ledger range ${startLedger}-${endLedgerExclusive}`
+        );
+      }
+
+      cursor = nextCursor;
+    }
+
+    return newest;
+  }
+
   async requestWithRetry(params, signal) {
     let attempt = 0;
 
@@ -217,7 +281,8 @@ export class SorobanEventStreamer {
     contractId,
     limit = 10,
     maxLookbackLedgers = 50000,
-    filters
+    filters,
+    signal
   } = {}) {
     if (limit <= 0) return [];
 
@@ -247,11 +312,12 @@ export class SorobanEventStreamer {
         endExclusive - this.windowSize
       );
 
-      const events = await this.fetchWindow(
+      const events = await this.fetchWindowNewest(
         start,
         endExclusive,
         effectiveFilters,
-        this.pageSize
+        limit,
+        signal
       );
 
       for (let i = events.length - 1; i >= 0; i--) {
