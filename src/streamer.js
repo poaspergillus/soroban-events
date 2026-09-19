@@ -45,15 +45,20 @@ export class SorobanEventStreamer {
     );
 
     this.pollInterval = options.pollInterval ?? 3000;
-    this.windowSize = Math.min(
-      options.windowSize ?? MAX_SAFE_LEDGER_SPAN,
-      MAX_SAFE_LEDGER_SPAN
-    );
 
-    this.pageSize = Math.min(
-      options.pageSize ?? DEFAULT_PAGE_SIZE,
-      10000
-    );
+    const windowSize = options.windowSize ?? MAX_SAFE_LEDGER_SPAN;
+    if (!Number.isInteger(windowSize) || windowSize < 1) {
+      throw new TypeError("windowSize must be a positive integer");
+    }
+
+    this.windowSize = Math.min(windowSize, MAX_SAFE_LEDGER_SPAN);
+
+    const pageSize = options.pageSize ?? DEFAULT_PAGE_SIZE;
+    if (!Number.isInteger(pageSize) || pageSize < 1 || pageSize > 10000) {
+      throw new TypeError("pageSize must be an integer between 1 and 10000");
+    }
+
+    this.pageSize = pageSize;
 
     this.maxRetries = options.maxRetries ?? 3;
     this.retryBaseMs = options.retryBaseMs ?? 500;
@@ -73,6 +78,10 @@ export class SorobanEventStreamer {
   }) {
     if (!Number.isInteger(startLedger) || startLedger < 1) {
       throw new TypeError('startLedger must be a positive integer');
+    }
+
+    if (!Number.isInteger(limit) || limit < 1) {
+      throw new TypeError('limit must be a positive integer');
     }
 
     if (endLedger != null && (!Number.isInteger(endLedger) || endLedger < startLedger)) {

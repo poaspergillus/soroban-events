@@ -357,3 +357,68 @@ test('invalid start ledger is rejected', async () => {
     /startLedger/
   );
 });
+
+test('invalid pagination options are rejected', async () => {
+  assert.throws(
+    () => new SorobanEventStreamer(
+      'https://example.invalid',
+      { pageSize: 0 }
+    ),
+    /pageSize/
+  );
+
+  assert.throws(
+    () => new SorobanEventStreamer(
+      'https://example.invalid',
+      { pageSize: -1 }
+    ),
+    /pageSize/
+  );
+
+  assert.throws(
+    () => new SorobanEventStreamer(
+      'https://example.invalid',
+      { windowSize: 0 }
+    ),
+    /windowSize/
+  );
+
+  assert.throws(
+    () => new SorobanEventStreamer(
+      'https://example.invalid',
+      { windowSize: -1 }
+    ),
+    /windowSize/
+  );
+
+  const streamer = new SorobanEventStreamer(
+    'https://example.invalid'
+  );
+
+  await assert.rejects(
+    () => streamer.getEventsWindowed({
+      startLedger: 1,
+      endLedger: 2,
+      limit: 0
+    }),
+    /limit/
+  );
+
+  await assert.rejects(
+    () => streamer.getEventsWindowed({
+      startLedger: 1,
+      endLedger: 2,
+      limit: -1
+    }),
+    /limit/
+  );
+
+  await assert.rejects(
+    () => streamer.getEventsWindowed({
+      startLedger: 1,
+      endLedger: 2,
+      limit: 1.5
+    }),
+    /limit/
+  );
+});
