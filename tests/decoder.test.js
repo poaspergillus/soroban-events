@@ -102,6 +102,19 @@ test('decodeEvent decodes ScVal topic and value', () => {
   );
 });
 
+test('maxDepth cannot be bypassed by decoder fallback', () => {
+  const nested = xdr.ScVal.scvVec([
+    xdr.ScVal.scvVec([
+      xdr.ScVal.scvSymbol('deep')
+    ])
+  ]);
+
+  assert.throws(
+    () => unwrapScVal(nested, { maxDepth: 0 }),
+    /maximum depth of 0/
+  );
+});
+
 test('contractId string is preserved', () => {
   const event = decodeEvent({
     id: 'event-2',

@@ -2,6 +2,13 @@ import { scValToNative } from '@stellar/stellar-sdk';
 
 const DEFAULT_MAX_DEPTH = 50;
 
+class ScValDepthError extends Error {
+  constructor(maxDepth) {
+    super(`ScVal nesting exceeds maximum depth of ${maxDepth}`);
+    this.name = "ScValDepthError";
+  }
+}
+
 export function unwrapScVal(scVal, options = {}) {
   if (scVal == null) return null;
 
@@ -9,14 +16,15 @@ export function unwrapScVal(scVal, options = {}) {
 
   try {
     return normalizeNative(scValToNative(scVal), 0, maxDepth);
-  } catch {
+  } catch (error) {
+    if (error instanceof ScValDepthError) throw error;
     return parseScValDirect(scVal);
   }
 }
 
 function normalizeNative(value, depth, maxDepth) {
   if (depth > maxDepth) {
-    throw new Error(`ScVal nesting exceeds maximum depth of ${maxDepth}`);
+    throw new ScValDepthError(maxDepth);
   }
 
   if (value === null || value === undefined) return null;
