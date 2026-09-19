@@ -2,7 +2,7 @@ import { scValToNative } from '@stellar/stellar-sdk';
 
 const DEFAULT_MAX_DEPTH = 50;
 
-class ScValDepthError extends Error {
+export class ScValDepthError extends Error {
   constructor(maxDepth) {
     super(`ScVal nesting exceeds maximum depth of ${maxDepth}`);
     this.name = "ScValDepthError";
@@ -14,8 +14,25 @@ export function unwrapScVal(scVal, options = {}) {
 
   const maxDepth = options.maxDepth ?? DEFAULT_MAX_DEPTH;
 
+  // Accept values that are already native JavaScript values.
+  // This makes the helper safe to use both with Stellar ScVal
+  // objects and with normalized data flowing through pipelines.
+  if (
+    typeof scVal !== 'object' ||
+    scVal instanceof Uint8Array ||
+    Buffer.isBuffer(scVal) ||
+    Array.isArray(scVal) ||
+    scVal instanceof Map
+  ) {
+    return normalizeNative(scVal, 0, maxDepth);
+  }
+
   try {
-    return normalizeNative(scValToNative(scVal), 0, maxDepth);
+    return normalizeNative(
+      scValToNative(scVal),
+      0,
+      maxDepth
+    );
   } catch (error) {
     if (error instanceof ScValDepthError) throw error;
     return parseScValDirect(scVal);
@@ -113,8 +130,13 @@ function normalizeContractId(value) {
 }
 
 export function decodeEvent(rawEvent, options = {}) {
-  const topics = Array.isArray(rawEvent.topic)
-    ? rawEvent.topic.map(topic => {
+  const rawTopics =
+    rawEvent.topic ??
+    rawEvent.topics ??
+    [];
+
+  const topics = Array.isArray(rawTopics)
+    ? rawTopics.map(topic => {
         try {
           return unwrapScVal(topic, options);
         } catch {
@@ -141,7 +163,9 @@ export function decodeEvent(rawEvent, options = {}) {
     contractId: normalizeContractId(rawEvent.contractId),
     transactionIndex: rawEvent.transactionIndex,
     operationIndex: rawEvent.operationIndex,
-    txHash: rawEvent.txHash,
+    txHash:
+      rawEvent.txHash ??
+      rawEvent.transactionHash,
     topics,
     value,
     inSuccessfulContractCall:

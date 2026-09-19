@@ -1,19 +1,28 @@
 {
   "name": "soroban-events",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "description": "Resilient, windowed event streamer and XDR decoder for Soroban RPC",
   "type": "module",
   "main": "./src/index.js",
   "exports": {
-    ".": "./src/index.js"
+    ".": {
+      "types": "./src/index.d.ts",
+      "import": "./src/index.js"
+    }
   },
   "files": [
-    "src/"
+    "src/",
+    "README.md",
+    "LICENSE"
   ],
   "scripts": {
     "test": "node --test tests/*.test.js",
     "test:live": "node tests/test-engine.js",
-    "pack:check": "npm pack --dry-run"
+    "pack:check": "npm pack --dry-run",
+    "cli": "node src/cli.js",
+    "test:unit": "node --test tests/*.test.js",
+    "audit": "node scripts/audit.mjs",
+    "pack:audit": "node scripts/pack-audit.mjs"
   },
   "keywords": [
     "soroban",
@@ -22,7 +31,11 @@
     "event-streaming",
     "event-indexer",
     "xdr",
-    "rpc"
+    "rpc",
+    "soroban-rpc",
+    "blockchain-events",
+    "event-replay",
+    "event-backfill"
   ],
   "license": "MIT",
   "engines": {
@@ -30,5 +43,9 @@
   },
   "dependencies": {
     "@stellar/stellar-sdk": "^17.1.0"
-  }
+  },
+  "bin": {
+    "soroban-events": "./src/cli.js"
+  },
+  "types": "./src/index.d.ts"
 }
