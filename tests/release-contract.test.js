@@ -22,6 +22,6 @@ test("changelog documents v3.0.0", async () => {
 test("README documents the unreleased v3.0.0 boundary", async () => {
   const readme = await readFile("README.md", "utf8");
   assert.match(readme, /## v3\.0\.0/);
-  assert.match(readme, /currently unreleased/i);
+  assert.doesNotMatch(readme, /currently unreleased/i);
   assert.match(readme, /SqliteEventStore/);
 });
