@@ -1,6 +1,6 @@
 {
   "name": "soroban-events",
-  "version": "2.0.0",
+  "version": "2.0.1",
   "description": "Resilient, windowed event streamer and XDR decoder for Soroban RPC",
   "type": "module",
   "main": "./src/index.js",
