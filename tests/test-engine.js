@@ -5,7 +5,7 @@ import { SorobanEventStreamer, MAX_SAFE_LEDGER_SPAN } from '../src/streamer.js';
 console.log("\x1b[36m=== 1. TESTING SCVAL DECODER & NORMALIZER ===\x1b[0m");
 
 // Test U64
-const u64Val = xdr.ScVal.scvU64(new xdr.Uint64(100, 200));
+const u64Val = xdr.ScVal.scvU64(429496729800n);
 console.log("  * U64 unwrapped:", unwrapScVal(u64Val));
 
 // Test Symbol
