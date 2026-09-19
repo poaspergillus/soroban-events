@@ -4,6 +4,52 @@ Resilient, windowed event streaming and XDR decoding for Soroban RPC.
 
 `soroban-events` provides production-oriented primitives for retrieving, decoding, processing, storing, replaying, and exporting Soroban contract events.
 
+## Why `soroban-events` exists
+
+Soroban applications increasingly depend on events as a source of application data, but consuming those events reliably from Soroban RPC requires more than making a single `getEvents` request.
+
+Applications need to deal with bounded ledger ranges, pagination, duplicate events, temporary RPC failures, historical backfills, checkpointing, reorgs, event decoding, and RPC retention limits. Building these reliability mechanisms independently in every application can lead to duplicated infrastructure and difficult-to-detect data-loss bugs.
+
+`soroban-events` provides that ingestion layer as a reusable Node.js library.
+
+Instead of each application building its own event polling and recovery system:
+
+**Soroban RPC → `soroban-events` → application / database / indexer**
+
+The goal is not to replace existing Soroban indexers or data platforms. It is to provide a reusable event-ingestion foundation that applications and larger indexing systems can build on.
+
+### The problem it solves
+
+A production event consumer cannot assume that an RPC request will always be complete, continuous, or successful.
+
+`soroban-events` is designed around those failure modes:
+
+- **Large historical ranges** → bounded ledger windows
+- **RPC page limits** → automatic cursor pagination
+- **Repeated requests / overlapping windows** → event-ID deduplication
+- **Process crashes** → persistent checkpoints
+- **Historical synchronization** → backfill and replay
+- **Live applications** → streaming and consumption APIs
+- **RPC failures** → retries, adaptive backoff, failover, and circuit breaking
+- **Ledger reorganizations** → consistency tracking and recovery
+- **Raw ScVal/XDR payloads** → event decoding
+- **RPC retention limits** → health and retention checks
+- **Application persistence** → SQLite and checkpoint/storage interfaces
+
+### Who is this for?
+
+`soroban-events` is intended for developers building:
+
+- Soroban applications that need durable event data
+- custom indexers
+- analytics pipelines
+- event-driven services
+- webhook and automation systems
+- data ingestion pipelines
+- applications that need historical backfills and live event consumption
+
+It can be used directly by an application or as the ingestion layer underneath a larger indexing system.
+
 ## Features
 
 - Safe windowed retrieval for ledger ranges larger than the Soroban RPC range limit.
@@ -514,4 +560,4 @@ Before upgrading, review:
 - TypeScript declarations;
 - Node.js 22.12.0 or newer requirement.
 
-The v3.0.0 release is currently unreleased.
+The v3.0.0 release is available on npm.
