@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { rmSync } from 'node:fs';
 
 import {
   EventStoreError,
@@ -215,29 +216,33 @@ test('sqlite store persists across store instances', async () => {
 
   store.close();
 
-  const first = new SqliteEventStore(filename);
+  try {
+    const first = new SqliteEventStore(filename);
 
-  await first.put({
-    id: 'persistent',
-    ledger: 42,
-    value: 'hello'
-  });
-
-  first.close();
-
-  const second =
-    new SqliteEventStore(filename);
-
-  assert.deepEqual(
-    await second.get('persistent'),
-    {
+    await first.put({
       id: 'persistent',
       ledger: 42,
       value: 'hello'
-    }
-  );
+    });
 
-  second.close();
+    first.close();
+
+    const second =
+      new SqliteEventStore(filename);
+
+    assert.deepEqual(
+      await second.get('persistent'),
+      {
+        id: 'persistent',
+        ledger: 42,
+        value: 'hello'
+      }
+    );
+
+    second.close();
+  } finally {
+    rmSync(filename, { force: true });
+  }
 });
 
 test('sqlite store rejects invalid ranges', async () => {

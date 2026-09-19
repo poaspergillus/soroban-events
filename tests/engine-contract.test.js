@@ -328,6 +328,45 @@ test('EventEngine watchReorg delegates to monitor', async () => {
   );
 });
 
+test('EventEngine consume passes onEvent through the handoff', async () => {
+  const calls = [];
+
+  const streamer = {
+    getLatestLedger: async () => 100,
+    getLedgerHistory: async () => ({
+      startLedger: 100,
+      endLedger: 100,
+      count: 1,
+      last: null,
+      ledgers: []
+    }),
+    getEventsWindowed: async () => [],
+    consume: async options => {
+      assert.equal(typeof options.onEvent, 'function');
+
+      await options.onEvent(
+        { id: 'event-1', ledger: 100 },
+        { source: 'test' }
+      );
+
+      return { consumed: true };
+    }
+  };
+
+  const engine = new EventEngine(streamer);
+
+  const result = await engine.consume({
+    onEvent: async (event, context) => {
+      calls.push({ event, context });
+    }
+  });
+
+  assert.deepEqual(result, { consumed: true });
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].event.id, 'event-1');
+  assert.equal(calls[0].context.source, 'test');
+});
+
 test('EventEngine propagates backfill failures', async () => {
   const failure =
     new Error('backfill failed');

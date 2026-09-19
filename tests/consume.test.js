@@ -163,6 +163,37 @@ test('consume resumes from checkpoint and reprocesses the checkpoint ledger', as
   assert.equal(await checkpoint.load('worker-1'), 102);
 });
 
+test('consume saves checkpoints with ledger then key', async () => {
+  const streamer = new SorobanEventStreamer(
+    'https://example.invalid'
+  );
+
+  streamer.getLatestLedger = async () => 1;
+  streamer.getEventsWindowed = async () => [
+    { id: 'event-1', ledger: 1 }
+  ];
+
+  const calls = [];
+
+  const checkpoint = {
+    resumeFrom: async () => 1,
+    save: async (key, ledger) => {
+      calls.push([key, ledger]);
+    }
+  };
+
+  const processed = await streamer.consume({
+    startLedger: 1,
+    checkpoint,
+    checkpointKey: 'consumer-a',
+    onEvent: async () => {},
+    maxEvents: 1
+  });
+
+  assert.equal(processed, 1);
+  assert.deepEqual(calls, [[2, 'consumer-a']]);
+});
+
 test('consume rejects missing handler', async () => {
   const streamer = new SorobanEventStreamer(
     'https://example.invalid'

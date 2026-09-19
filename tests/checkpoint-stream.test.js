@@ -38,6 +38,59 @@ function makeStreamer(events) {
   return streamer;
 }
 
+test('stream saves checkpoints with ledger then key', async () => {
+  const streamer = new SorobanEventStreamer(
+    'https://example.invalid'
+  );
+
+  streamer.getLatestLedger = async () => 1;
+  streamer.getEventsWindowed = async () => [
+    { id: 'event-1', ledger: 1 }
+  ];
+
+  const calls = [];
+
+  const checkpoint = {
+    resumeFrom: async () => 1,
+    save: async (key, ledger) => {
+      calls.push([key, ledger]);
+    }
+  };
+
+  const controller = new AbortController();
+
+  streamer.getEventsWindowed = async () => [
+    { id: 'event-1', ledger: 1 }
+  ];
+
+  const iterator = streamer.stream({
+    startLedger: 1,
+    checkpoint,
+    checkpointKey: 'stream-a',
+    signal: controller.signal
+  });
+
+  const first = await iterator.next();
+
+  assert.equal(first.done, false);
+  assert.deepEqual(first.value, {
+    id: 'event-1',
+    ledger: 1
+  });
+
+  const second = iterator.next();
+  await new Promise(resolve => setTimeout(resolve, 10));
+  controller.abort();
+  await Promise.race([
+    second,
+    new Promise(resolve => setTimeout(resolve, 100))
+  ]);
+
+  assert.deepEqual(calls, [[2, 'stream-a']]);
+
+  await iterator.return();
+});
+
 test('stream does not checkpoint before consumer resumes iteration', async () => {
   const events = [makeEvent('1', 10)];
   const streamer = makeStreamer(events);

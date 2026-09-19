@@ -85,8 +85,12 @@ export class Command {
     const args =
       argv.slice(2);
 
+    if (args.length === 0) {
+      this.printHelp();
+      return;
+    }
+
     if (
-      args.length === 0 ||
       args[0] === '--help' ||
       args[0] === '-h'
     ) {
@@ -121,6 +125,24 @@ export class Command {
   }
 
   async #run(args) {
+    if (
+      args[0] === '--help' ||
+      args[0] === '-h'
+    ) {
+      this.printHelp();
+      return;
+    }
+
+    if (
+      args[0] === '--version' ||
+      args[0] === '-v'
+    ) {
+      process.stdout.write(
+        `${this.#version}\n`
+      );
+      return;
+    }
+
     const values = {};
 
     for (const option of this.#options) {
@@ -178,24 +200,46 @@ export class Command {
   }
 
   printHelp() {
-    const root =
-      this.#parent ?? this;
+    const command =
+      this;
 
-    const commands =
-      [...root.#commands.keys()];
+    const lines = [
+      command.#name,
+      command.#description,
+      ''
+    ];
 
-    process.stdout.write(
-      [
-        root.#name,
-        root.#description,
-        '',
+    if (command.#commands.size > 0) {
+      lines.push(
         'Commands:',
-        ...commands.map(
+        ...[...command.#commands.keys()].map(
           name =>
             `  ${name}`
         ),
         ''
-      ].join('\n')
+      );
+    }
+
+    if (command.#options.length > 0) {
+      lines.push(
+        'Options:',
+        ...command.#options.map(
+          option =>
+            `  ${option.flag}  ${option.description}`
+        ),
+        ''
+      );
+    }
+
+    if (command.#version) {
+      lines.push(
+        '  -v, --version  Show version',
+        ''
+      );
+    }
+
+    process.stdout.write(
+      lines.join('\n')
     );
   }
 }

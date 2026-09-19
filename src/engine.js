@@ -370,7 +370,7 @@ export class EventEngine {
       checkpoint,
       checkpointKey,
       signal,
-      handler: async (
+      onEvent: async (
         event,
         context
       ) => {
@@ -384,10 +384,10 @@ export class EventEngine {
         }
 
         if (
-          typeof options.handler ===
+          typeof options.onEvent ===
           'function'
         ) {
-          await options.handler(
+          await options.onEvent(
             event,
             context
           );
@@ -506,7 +506,7 @@ export class EventEngine {
         await this.consume({
           filters,
           signal: effectiveSignal,
-          handler: onEvent
+          onEvent
         });
 
       return {
