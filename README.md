@@ -561,3 +561,14 @@ Before upgrading, review:
 - Node.js 22.12.0 or newer requirement.
 
 The v3.0.0 release is available on npm.
+
+## Maintenance Notice
+
+This project is available for anyone who wants to use it.
+
+I won't be actively maintaining or updating it unless there is paid funding or sponsorship for continued development.
+
+You are welcome to fork it, modify it, and maintain it yourself.
+
+For paid development, maintenance, bug fixes, or new features, please contact me.
+
