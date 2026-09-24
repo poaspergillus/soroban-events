@@ -562,13 +562,12 @@ Before upgrading, review:
 
 The v3.0.0 release is available on npm.
 
-## Maintenance Notice
+## Project status
 
-This project is available for anyone who wants to use it.
+`soroban-events` is an open-source project for reliable Soroban event ingestion and XDR decoding.
 
-I won't be actively maintaining or updating it unless there is paid funding or sponsorship for continued development.
+Development is focused on improving reliability, decoding, storage, backfill and replay, performance, testing, and developer experience.
 
-You are welcome to fork it, modify it, and maintain it yourself.
+Contributions are welcome. Bug reports, small improvements, tests, documentation updates, and new features are all useful.
 
-For paid development, maintenance, bug fixes, or new features, please contact me.
-
+For larger changes, please open an issue first so the scope can be discussed before implementation.
