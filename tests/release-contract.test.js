@@ -16,7 +16,8 @@ test("package lock matches v3.0.0", async () => {
 
 test("changelog documents v3.0.0", async () => {
   const changelog = await readFile("CHANGELOG.md", "utf8");
-  assert.match(changelog, /^## \[3\.0\.0\] - Unreleased/m);
+  assert.match(changelog, /^## \[Unreleased\]/m);
+  assert.match(changelog, /^## \[3\.0\.0\] - 2026-09-19/m);
 });
 
 test("README documents the unreleased v3.0.0 boundary", async () => {

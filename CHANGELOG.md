@@ -2,7 +2,11 @@
 
 All notable changes to `soroban-events` are documented here.
 
-## [3.0.0] - Unreleased
+## [Unreleased]
+
+No unreleased changes yet.
+
+## [3.0.0] - 2026-09-19
 
 ### Added
 

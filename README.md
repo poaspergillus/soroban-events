@@ -1,5 +1,4 @@
 # soroban-events
-
 Resilient, windowed event streaming and XDR decoding for Soroban RPC.
 
 `soroban-events` provides production-oriented primitives for retrieving, decoding, processing, storing, replaying, and exporting Soroban contract events.
@@ -561,6 +560,10 @@ Before upgrading, review:
 - Node.js 22.12.0 or newer requirement.
 
 The v3.0.0 release is available on npm.
+
+## Contributing
+
+Contributions are welcome. Please read [CONTRIBUTING.md](CONTRIBUTING.md) before opening a pull request. Bug reports and feature proposals can be submitted using the repository's issue templates.
 
 ## Project status
 
